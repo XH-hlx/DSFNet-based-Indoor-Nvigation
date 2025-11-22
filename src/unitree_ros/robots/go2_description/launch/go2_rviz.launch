@@ -1,0 +1,26 @@
+<launch>
+  <arg name="user_debug" default="false"/>
+
+  <!-- URDF -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro $(find go2_description)/xacro/robot.xacro DEBUG:=$(arg user_debug)"/>
+
+  <!-- 发布 TF（从 Gazebo joint_states） -->
+  <node pkg="robot_state_publisher"
+        type="robot_state_publisher"
+        name="robot_state_publisher"
+        output="screen">
+    <param name="publish_frequency" type="double" value="100.0"/>
+    <!-- remap Gazebo joint_states 到 robot_state_publisher 订阅 -->
+    <remap from="joint_states" to="/go2_gazebo/joint_states"/>
+  </node>
+
+  <!-- map->odom 身份变换（可选，或改 Fixed Frame） -->
+  <node pkg="tf" type="static_transform_publisher" name="map_to_odom"
+        args="0 0 0 0 0 0 map odom 100"/>
+
+  <!-- RViz -->
+  <arg name="rviz_config" default="$(find go2_description)/launch/go2_with_sensors.rviz"/>
+  <node pkg="rviz" type="rviz" name="rviz" output="screen"
+        args="-d $(arg rviz_config)"/>
+</launch>

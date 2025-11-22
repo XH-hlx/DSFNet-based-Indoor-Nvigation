@@ -1,0 +1,7 @@
+<launch>
+  <!-- <env name="GAZEBO_MODEL_PATH" value="/home/xh/.gazebo/models"/>
+  <env name="GAZEBO_RESOURCE_PATH" value="/home/xh/.gazebo/models"/> -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="small_house.world"/>
+  </include>
+</launch>

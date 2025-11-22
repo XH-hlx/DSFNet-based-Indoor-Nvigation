@@ -1,0 +1,200 @@
+<launch>
+  <!-- ===================================================================== -->
+  <!-- Unitree Go2 Semantic Navigation Simulation (Gazebo) -->
+  <!-- Integrates: DSFNet SSC + Ego-Planner + Semantic Differentiated Costs -->
+  <!-- ===================================================================== -->
+
+  <!-- ============================================ -->
+  <!-- Arguments -->
+  <!-- ============================================ -->
+
+  <!-- Robot configuration -->
+  <arg name="robot_name" default="go2"/>
+  <arg name="world_name" default="small_house"/>  <!-- Options: indoor_scene, stairs, empty -->
+
+  <!-- DSFNet model -->
+  <arg name="dsfnet_model_path" default="$(env HOME)/ros1_ws/DSFNet/models/best_model.pth"/>
+  <arg name="use_semantic_cost" default="true"/>
+  <arg name="lambda_semantic" default="5.0"/>
+
+  <!-- Map configuration -->
+  <arg name="map_size_x" default="40.0"/>
+  <arg name="map_size_y" default="40.0"/>
+  <arg name="map_size_z" default="3.0"/>
+
+  <!-- Camera configuration -->
+  <arg name="camera_enabled" default="true"/>
+  <arg name="depth_camera" default="true"/>
+
+  <!-- Visualization -->
+  <arg name="rviz" default="true"/>
+  <arg name="rqt" default="false"/>
+
+  <!-- ============================================ -->
+  <!-- 1. Gazebo Simulation with Go2 -->
+  <!-- ============================================ -->
+
+  <!-- Start Gazebo with custom world -->
+  <include file="$(find unitree_gazebo)/launch/normal.launch">
+    <arg name="rname" value="$(arg robot_name)"/>
+    <arg name="wname" value="$(arg world_name)"/>
+    <arg name="gui" value="true"/>
+  </include>
+
+  <!-- Spawn Go2 with RGB-D Camera -->
+  <group if="$(arg camera_enabled)">
+    <!-- Camera TF publisher -->
+    <node pkg="tf" type="static_transform_publisher" name="camera_tf_publisher"
+          args="0.28 0.0 0.05 0 0.3 0 base camera_link 50" />
+
+    <node pkg="tf" type="static_transform_publisher" name="camera_optical_tf"
+          args="0 0 0 -1.57079632679 0 -1.57079632679 camera_link camera_color_optical_frame 50" />
+  </group>
+
+  <!-- ============================================ -->
+  <!-- 2. Sensor Simulation (RGB-D Camera) -->
+  <!-- ============================================ -->
+
+  <group if="$(arg depth_camera)">
+    <!-- Launch simulated RealSense camera -->
+    <include file="$(find unitree_ssc_navigation)/launch/includes/gazebo_rgbd_camera.launch">
+      <arg name="camera_name" value="camera"/>
+      <arg name="frame_id" value="camera_link"/>
+    </include>
+  </group>
+
+  <!-- ============================================ -->
+  <!-- 3. Odometry and TF -->
+  <!-- ============================================ -->
+
+  <!-- Publish Gazebo odometry to standard topic -->
+  <node pkg="unitree_ssc_navigation" type="unitree_odom_bridge.py" name="unitree_odom_bridge" output="screen">
+    <param name="odom_input_topic" value="/$(arg robot_name)_gazebo/odom"/>
+    <param name="odom_output_topic" value="/visual_slam/odom"/>
+    <param name="pose_output_topic" value="/robot_pose"/>
+    <param name="camera_frame" value="camera_color_optical_frame"/>
+    <param name="base_frame" value="base"/>
+    <param name="world_frame" value="world"/>
+  </node>
+
+  <!-- ============================================ -->
+  <!-- 4. DSFNet Semantic Scene Completion -->
+  <!-- ============================================ -->
+
+  <node pkg="unitree_ssc_navigation" type="dsfnet_inference_node.py"
+        name="dsfnet_inference_node" output="screen" required="false">
+
+    <!-- Model path -->
+    <param name="model_path" value="$(arg dsfnet_model_path)"/>
+    <param name="dsfnet_path" value="$(env HOME)/ros1_ws/DSFNet"/>
+
+    <!-- Camera parameters (RealSense D435 defaults) -->
+    <param name="fx" value="387.229248046875"/>
+    <param name="fy" value="387.229248046875"/>
+    <param name="cx" value="321.04638671875"/>
+    <param name="cy" value="243.44969177246094"/>
+    <param name="img_width" value="640"/>
+    <param name="img_height" value="480"/>
+
+    <!-- SSC parameters -->
+    <param name="num_classes" value="12"/>
+    <param name="voxel_size" value="[240, 144, 240]"/>
+    <param name="voxel_unit" value="0.02"/>
+
+    <!-- Semantic costs (12 classes) -->
+    <rosparam param="semantic_costs">[0.1, 1.0, 0.3, 1.0, 0.9, 0.7, 0.8, 0.8, 0.7, 0.6, 0.75, 0.65]</rosparam>
+
+    <!-- Topic remapping -->
+    <remap from="/camera/color/image_raw" to="/camera/color/image_raw"/>
+    <remap from="/camera/depth/image_raw" to="/camera/depth/image_raw"/>
+  </node>
+
+  <!-- ============================================ -->
+  <!-- 5. Ego-Planner with Semantic Integration -->
+  <!-- ============================================ -->
+
+  <include file="$(find ego_planner)/launch/advanced_param.xml">
+    <!-- Map size -->
+    <arg name="map_size_x_" value="$(arg map_size_x)"/>
+    <arg name="map_size_y_" value="$(arg map_size_y)"/>
+    <arg name="map_size_z_" value="$(arg map_size_z)"/>
+
+    <!-- Odometry -->
+    <arg name="odometry_topic" value="/visual_slam/odom"/>
+
+    <!-- Point cloud from simulator or SSC -->
+    <arg name="cloud_topic" value="/camera/depth/points"/>
+
+    <!-- Camera intrinsics -->
+    <arg name="cx" value="321.04638671875"/>
+    <arg name="cy" value="243.44969177246094"/>
+    <arg name="fx" value="387.229248046875"/>
+    <arg name="fy" value="387.229248046875"/>
+
+    <!-- Robot motion limits (quadruped) -->
+    <arg name="max_vel" value="1.0"/>
+    <arg name="max_acc" value="2.0"/>
+
+    <!-- Planning horizon -->
+    <arg name="planning_horizon" value="7.5"/>
+
+    <!-- Use 2D Nav Goal -->
+    <arg name="flight_type" value="1"/>
+
+    <!-- Semantic parameters (already set in advanced_param.xml) -->
+    <!-- use_semantic_cost = true, lambda_semantic = 5.0 -->
+  </include>
+
+  <!-- ============================================ -->
+  <!-- 6. Trajectory Server -->
+  <!-- ============================================ -->
+
+  <node pkg="ego_planner" name="traj_server" type="traj_server" output="screen">
+    <remap from="/position_cmd" to="/planning/pos_cmd"/>
+    <remap from="/odom_world" to="/visual_slam/odom"/>
+    <param name="traj_server/time_forward" value="1.0" type="double"/>
+  </node>
+
+  <!-- ============================================ -->
+  <!-- 7. Waypoint Generator -->
+  <!-- ============================================ -->
+
+  <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
+    <remap from="~odom" to="/visual_slam/odom"/>
+    <remap from="~goal" to="/move_base_simple/goal"/>
+    <remap from="~traj_start_trigger" to="/traj_start_trigger"/>
+    <param name="waypoint_type" value="manual-lonely-waypoint"/>
+  </node>
+
+  <!-- ============================================ -->
+  <!-- 8. Go2 Velocity Controller -->
+  <!-- ============================================ -->
+
+  <!-- Convert position commands to velocity commands for Go2 -->
+  <node pkg="unitree_ssc_navigation" type="cmd_converter.py" name="cmd_converter" output="screen">
+    <remap from="/planning/pos_cmd" to="/planning/pos_cmd"/>
+    <remap from="/cmd_vel" to="/$(arg robot_name)_gazebo/cmd_vel"/>
+    <param name="max_linear_vel" value="0.8"/>
+    <param name="max_angular_vel" value="1.0"/>
+  </node>
+
+  <!-- ============================================ -->
+  <!-- 9. Visualization -->
+  <!-- ============================================ -->
+
+  <!-- RViz -->
+  <node if="$(arg rviz)" type="rviz" name="rviz" pkg="rviz"
+        args="-d $(find unitree_ssc_navigation)/config/go2_semantic_nav.rviz"/>
+
+  <!-- RQT (optional) -->
+  <node if="$(arg rqt)" type="rqt_image_view" name="rqt_image_view" pkg="rqt_image_view"/>
+
+  <!-- ============================================ -->
+  <!-- 10. Monitoring and Logging -->
+  <!-- ============================================ -->
+
+  <!-- Topic monitor -->
+  <node pkg="rostopic" type="rostopic" name="topic_monitor"
+        args="hz /ssc_inference_node/semantic_cloud_xyz" output="screen"/>
+
+</launch>

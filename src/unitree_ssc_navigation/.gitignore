@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ROS
+build/
+devel/
+logs/
+*.swp
+*.swo
+*~
+.catkin_workspace
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+
+# Compiled files
+*.pyc
+*.pyo
+*.o
+*.a
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+
+# Model files (too large for git)
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+models/*.pth
+models/*.pt
+
+# Bag files (can be very large)
+*.bag
+*.bag.active
+
+# Generated files
+frames.pdf
+frames.gv
+CMakeLists.txt.user

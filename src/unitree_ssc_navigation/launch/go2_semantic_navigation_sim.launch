@@ -12,6 +12,12 @@
   <arg name="robot_name" default="go2"/>
   <arg name="world_name" default="small_house"/>  <!-- Options: indoor_scene, stairs, empty -->
 
+  <!-- Robot initial position (Gazebo spawn location) -->
+  <arg name="spawn_x" default="-2.0"/>  <!-- X position (meters) -->
+  <arg name="spawn_y" default="-2.0"/>  <!-- Y position (meters) -->
+  <arg name="spawn_z" default="0.6"/>   <!-- Z position (meters, 0.6 for standing) -->
+  <arg name="spawn_yaw" default="0.0"/> <!-- Yaw orientation (radians, 0=facing +X) -->
+
   <!-- DSFNet model -->
   <arg name="dsfnet_model_path" default="$(env HOME)/ros1_ws/DSFNet/models/best_model.pth"/>
   <arg name="use_semantic_cost" default="true"/>
@@ -34,19 +40,57 @@
   <!-- 1. Gazebo Simulation with Go2 -->
   <!-- ============================================ -->
 
-  <!-- Start Gazebo with custom world -->
-  <include file="$(find unitree_gazebo)/launch/normal.launch">
-    <arg name="rname" value="$(arg robot_name)"/>
-    <arg name="wname" value="$(arg world_name)"/>
+  <!-- Start Gazebo empty world -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(find unitree_gazebo)/worlds/$(arg world_name).world"/>
+    <arg name="paused" value="false"/>
+    <arg name="use_sim_time" value="true"/>
     <arg name="gui" value="true"/>
+    <arg name="headless" value="false"/>
+    <arg name="debug" value="false"/>
   </include>
 
-  <!-- Spawn Go2 with RGB-D Camera -->
-  <group if="$(arg camera_enabled)">
-    <!-- Camera TF publisher -->
-    <node pkg="tf" type="static_transform_publisher" name="camera_tf_publisher"
-          args="0.28 0.0 0.05 0 0.3 0 base camera_link 50" />
+  <!-- Load Go2 URDF to parameter server -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro --inorder '$(find go2_description)/xacro/robot.xacro' DEBUG:=false"/>
 
+  <!-- Spawn Go2 in Gazebo with custom initial position -->
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_go2"
+        args="-urdf -model $(arg robot_name)_gazebo -param robot_description
+              -x $(arg spawn_x) -y $(arg spawn_y) -z $(arg spawn_z) -Y $(arg spawn_yaw)
+              -unpause"
+        output="screen" respawn="false" />
+
+  <!-- Load joint controller configurations -->
+  <rosparam file="$(find go2_description)/config/robot_control.yaml" command="load"/>
+
+  <!-- Load the controllers -->
+  <node pkg="controller_manager" type="spawner" name="controller_spawner"
+        respawn="false" output="screen" ns="/$(arg robot_name)_gazebo"
+        args="joint_state_controller
+              FL_hip_controller FL_thigh_controller FL_calf_controller
+              FR_hip_controller FR_thigh_controller FR_calf_controller
+              RL_hip_controller RL_thigh_controller RL_calf_controller
+              RR_hip_controller RR_thigh_controller RR_calf_controller" />
+
+  <!-- Robot state publisher for TF -->
+  <node pkg="robot_state_publisher" type="robot_state_publisher"
+        name="robot_state_publisher" respawn="false" output="screen">
+    <remap from="/joint_states" to="/$(arg robot_name)_gazebo/joint_states"/>
+  </node>
+
+  <!-- Load unitree controller parameters -->
+  <include file="$(find unitree_controller)/launch/set_ctrl.launch">
+    <arg name="rname" value="$(arg robot_name)"/>
+  </include>
+
+  <!-- TF for Camera (RealSense is already in URDF at front_camera link) -->
+  <group if="$(arg camera_enabled)">
+    <!-- TF: real_sense (from URDF) → camera_link (for compatibility) -->
+    <node pkg="tf" type="static_transform_publisher" name="camera_link_tf"
+          args="0 0 0 0 0 0 real_sense camera_link 50" />
+
+    <!-- TF: camera_link → camera_color_optical_frame (ROS standard) -->
     <node pkg="tf" type="static_transform_publisher" name="camera_optical_tf"
           args="0 0 0 -1.57079632679 0 -1.57079632679 camera_link camera_color_optical_frame 50" />
   </group>
@@ -55,12 +99,28 @@
   <!-- 2. Sensor Simulation (RGB-D Camera) -->
   <!-- ============================================ -->
 
+  <!-- NOTE: RealSense相机已在go2_description/xacro/gazebo.xacro中定义 -->
+  <!-- 话题重映射: /real_sense/* → /camera/* -->
+
   <group if="$(arg depth_camera)">
-    <!-- Launch simulated RealSense camera -->
-    <include file="$(find unitree_ssc_navigation)/launch/includes/gazebo_rgbd_camera.launch">
-      <arg name="camera_name" value="camera"/>
-      <arg name="frame_id" value="camera_link"/>
-    </include>
+    <!-- 重映射RGB图像 -->
+    <node pkg="topic_tools" type="relay" name="rgb_relay"
+          args="/real_sense/rgb/image_raw /camera/color/image_raw" />
+
+    <!-- 重映射深度图像 -->
+    <node pkg="topic_tools" type="relay" name="depth_relay"
+          args="/real_sense/depth/image_raw /camera/depth/image_raw" />
+
+    <!-- 重映射点云 -->
+    <node pkg="topic_tools" type="relay" name="points_relay"
+          args="/real_sense/depth/points /camera/depth/points" />
+
+    <!-- 重映射相机信息 -->
+    <node pkg="topic_tools" type="relay" name="rgb_info_relay"
+          args="/real_sense/rgb/camera_info /camera/color/camera_info" />
+
+    <node pkg="topic_tools" type="relay" name="depth_info_relay"
+          args="/real_sense/depth/camera_info /camera/depth/camera_info" />
   </group>
 
   <!-- ============================================ -->
@@ -119,10 +179,11 @@
     <arg name="map_size_y_" value="$(arg map_size_y)"/>
     <arg name="map_size_z_" value="$(arg map_size_z)"/>
 
-    <!-- Odometry -->
+    <!-- Topics -->
     <arg name="odometry_topic" value="/visual_slam/odom"/>
-
-    <!-- Point cloud from simulator or SSC -->
+    <arg name="goal_topic" value="/way_point"/>
+    <arg name="camera_pose_topic" value="/camera_pose"/>
+    <arg name="depth_topic" value="/camera/depth/image_raw"/>
     <arg name="cloud_topic" value="/camera/depth/points"/>
 
     <!-- Camera intrinsics -->
@@ -141,8 +202,20 @@
     <!-- Use 2D Nav Goal -->
     <arg name="flight_type" value="1"/>
 
-    <!-- Semantic parameters (already set in advanced_param.xml) -->
-    <!-- use_semantic_cost = true, lambda_semantic = 5.0 -->
+    <!-- Waypoint configuration (required but not used when flight_type=1) -->
+    <arg name="point_num" value="2"/>
+    <arg name="point0_x" value="0.0"/>
+    <arg name="point0_y" value="0.0"/>
+    <arg name="point0_z" value="0.0"/>
+    <arg name="point1_x" value="1.0"/>
+    <arg name="point1_y" value="0.0"/>
+    <arg name="point1_z" value="0.0"/>
+    <arg name="point2_x" value="2.0"/>
+    <arg name="point2_y" value="0.0"/>
+    <arg name="point2_z" value="0.0"/>
+
+    <!-- Semantic parameters are already set in advanced_param.xml -->
+    <!-- use_semantic_cost = true, lambda_semantic = 5.0 (lines 128, 127) -->
   </include>
 
   <!-- ============================================ -->

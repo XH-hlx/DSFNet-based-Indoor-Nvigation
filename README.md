@@ -21,11 +21,11 @@ DSFNet is a 3D SSC framework for indoor RGB-D. DAM uses depth completion to repa
 
 - Ubuntu 20.04
 - python 3.6
-- CUDA 10.1
+- CUDA 11.8
 
 ### Requirements:
 
-- [pytorch](https://pytorch.org/)≥1.4.0
+- [pytorch](https://pytorch.org/)≥2.4.0
 - [torch_scatter](https://github.com/rusty1s/pytorch_scatter)
 - imageio
 - scipy

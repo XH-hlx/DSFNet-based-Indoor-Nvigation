@@ -5,7 +5,7 @@ DSFNet is a 3D SSC framework for indoor RGB-D. DAM uses depth completion to repa
 
 
 
-![](.\figure\DSFNet.png)
+![](./figure/DSFNet.png)
 
 ## Contents
 

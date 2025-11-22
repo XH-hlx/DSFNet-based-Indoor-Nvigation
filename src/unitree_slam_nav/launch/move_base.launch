@@ -1,9 +1,0 @@
-<launch>
-  <!-- 启动 move_base 节点 -->
-  <node pkg="move_base" type="move_base" name="move_base" output="screen">
-    <!-- 加载全局 costmap 参数 -->
-    <rosparam file="$(find unitree_slam_nav)/config/global_costmap.yaml" command="load" ns="global_costmap"/>
-    <!-- 加载局部 costmap 参数 -->
-    <rosparam file="$(find unitree_slam_nav)/config/local_costmap.yaml" command="load" ns="local_costmap"/>
-  </node>
-</launch>

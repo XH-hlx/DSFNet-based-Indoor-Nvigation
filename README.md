@@ -44,7 +44,7 @@ If you use other versions of PyTorch or CUDA, be sure to select the correspondin
 
 The raw data can be found in [SSCNet](https://github.com/shurans/sscnet).
 
-The repackaged data can be downloaded via [Google Drive](https://drive.google.com/drive/folders/15vFzZQL2eLu6AKSAcCbIyaA9n1cQi3PO?usp=sharing) or [BaiduYun(Access code:lpmk)](https://pan.baidu.com/s/1mtdAEdHYTwS4j8QjptISBg).
+The repackaged data can be downloaded via [waterljwant/SSC](https://github.com/shurans/sscnet) on [Google Drive](https://drive.google.com/drive/folders/15vFzZQL2eLu6AKSAcCbIyaA9n1cQi3PO?usp=sharing) or [Baidu Cloud (access code: lpmk)](https://pan.baidu.com/s/1mtdAEdHYTwS4j8QjptISBg).
 
 The repackaged data includes:
 
